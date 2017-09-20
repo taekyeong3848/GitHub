@@ -9,10 +9,56 @@ random.seed(123456789)
 
 
 
-# def BPR ():
+def BPR (user_count, item_count, hidden_dim):
+    u = tf.placeholder(tf.int32, [None])
+    i = tf.placeholder(tf.int32, [None])
+    j = tf.placeholder(tf.int32, [None])
+
+    with tf.device("/cpu:0"):
+        user_emb_w = tf.get_variable("user_emb_w", [user_count + 1, hidden_dim],
+                                     initializer=tf.random_normal_initializer(0, 0.1))
+        item_emb_w = tf.get_variable("item_emb_w", [item_count + 1, hidden_dim],
+                                     initializer=tf.random_normal_initializer(0, 0.1))
+        item_b = tf.get_variable("item_b", [item_count + 1, 1],
+                                 initializer=tf.constant_initializer(0.0))
+        u_emb = tf.nn.embedding_lookup(user_emb_w, u)
+        i_emb = tf.nn.embedding_lookup(item_emb_w, i)
+        i_b = tf.nn.embedding_lookup(item_b, i)
+        j_emb = tf.nn.embedding_lookup(item_emb_w, j)
+        j_b = tf.nn.embedding_lookup(item_b, j)
 
 
-def SVD(user_batch, item_batch, rate_batch, user_num, item_num, r, dim = 5):
+
+
+    rating_mat = tf.matmul(user_emb_w, tf.transpose(item_emb_w))
+
+    # MF predict: u_i > u_j
+    x = i_b - j_b + tf.reduce_sum(tf.multiply(u_emb, (i_emb - j_emb)), 1, keep_dims=True)
+
+    # AUC for one user:
+    # reasonable iff all (u,i,j) pairs are from the same user
+    #
+    # average AUC = mean( auc for each user in test set)
+    mf_auc = tf.reduce_mean(tf.to_float(x > 0))
+
+    l2_norm = tf.add_n([
+        tf.reduce_sum(tf.multiply(u_emb, u_emb)),
+        tf.reduce_sum(tf.multiply(i_emb, i_emb)),
+        tf.reduce_sum(tf.multiply(j_emb, j_emb))
+    ])
+
+    regulation_rate = 0.0001
+    bprloss = regulation_rate * l2_norm - tf.reduce_mean(tf.log(tf.sigmoid(x)))
+
+    train_op = tf.train.GradientDescentOptimizer(0.01).minimize(bprloss)
+
+    return u, i, j, mf_auc, bprloss, train_op, rating_mat
+
+def SVD(user_num, item_num, r, dim):
+    user_batch = tf.placeholder(tf.int32, shape=[None], name="id_user")
+    item_batch = tf.placeholder(tf.int32, shape=[None], name="id_item")
+    rate_batch = tf.placeholder(tf.float32, shape=[None])
+
     bias_global = tf.get_variable("bias_global", shape=[])
     w_bias_user = tf.get_variable("embd_bias_user", shape=[user_num])
     w_bias_item = tf.get_variable("embd_bias_item", shape=[item_num])
@@ -36,14 +82,55 @@ def SVD(user_batch, item_batch, rate_batch, user_num, item_num, r, dim = 5):
     penalty = tf.constant(r, dtype=tf.float32, shape=[], name="l2")
     cost = tf.add(cost_l2, tf.multiply(regularizer, penalty))
 
-    return bias_user, infer, cost
+    return user_batch, item_batch, rate_batch, infer, cost
 
 
-# def SVDpp():
+def SVDpp(user_num, item_num, r, dim):
+    user_batch = tf.placeholder(tf.int32, shape=[None], name="id_user")
+    item_batch = tf.placeholder(tf.int32, shape=[None], name="id_item")
+    rate_batch = tf.placeholder(tf.float32, shape=[None])
+    rating_list_batch = tf.placeholder(tf.int64, shape=[None, None])# rate 한 item의 index
+    userImplicit_batch = tf.placeholder(tf.float32, shape=[None, dim])  # userimplict
+
+    bias_global = tf.get_variable("bias_global", shape=[])
+    w_bias_user = tf.get_variable("embd_bias_user", shape=[user_num])
+    w_bias_item = tf.get_variable("embd_bias_item", shape=[item_num])
+    bias_user = tf.nn.embedding_lookup(w_bias_user, user_batch, name="bias_user")
+    bias_item = tf.nn.embedding_lookup(w_bias_item, item_batch, name="bias_item")
+
+    w_user = tf.get_variable("embd_user", shape=[user_num, dim],
+                             initializer=tf.truncated_normal_initializer
+                             (stddev=0.02))
+    w_item = tf.get_variable("embd_item", shape=[item_num, dim],
+                             initializer=tf.truncated_normal_initializer
+                             (stddev=0.02))
+
+    w_y = tf.get_variable("embd_y", shape=[item_num, dim],
+                          initializer= tf.truncated_normal_initializer
+                          (stddev=0.02))
+
+    embd_y = tf.nn.embedding_lookup(w_y, rating_list_batch)
+    embd_user = tf.nn.embedding_lookup(w_user, user_batch, name="embedding_user")
+    embd_item = tf.nn.embedding_lookup(w_item, item_batch, name="embedding_item")
+
+    infer = userImplicit_batch
+    infer = tf.add(infer, embd_user)
+    infer = tf.reduce_sum(tf.multiply(infer, embd_item), 1)
+    infer = tf.add(infer, bias_global)
+    infer = tf.add(infer, bias_user)
+    infer = tf.add(infer, bias_item)
+
+    regularizer = tf.add(tf.nn.l2_loss(bias_user), tf.nn.l2_loss(bias_item))
+    regularizer = tf.add(regularizer, tf.nn.l2_loss(w_y))
+
+    cost_l2 = tf.nn.l2_loss(tf.subtract(infer, rate_batch))
+    penalty = tf.constant(r, dtype=tf.float32, shape=[], name="l2")
+    cost = tf.add(cost_l2, tf.multiply(regularizer, penalty))
+    return user_batch, item_batch, rate_batch, rating_list_batch, userImplicit_batch,\
+           embd_y, infer, cost
 
 
-
-def Autorec (itemCount, h, r): 
+def Autorec (itemCount, h, r):
     data = tf.placeholder(tf.float32, [None, itemCount])
     mask = tf.placeholder(tf.float32, [None, itemCount])
 
