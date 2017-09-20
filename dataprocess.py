@@ -226,6 +226,46 @@ def Separate_training_and_test(d, k=1):
     return len(us_total)+1, len(it_total)+1
 
 
+def load_bprdata(data_path):
+    '''
+    As for bpr experiment, all ratings are removed.
+    '''
+    user_ratings = defaultdict(set)
+    max_u_id = -1
+    max_i_id = -1
+    with open(data_path, 'r') as f:
+        for line in f.readlines():
+            u, i, _ = line.split(" ")
+            u = int(u)
+            i = int(i)
+            user_ratings[u].add(i)
+            max_u_id = max(u, max_u_id)
+            max_i_id = max(i, max_i_id)
+
+    #print("max_u_id:", max_u_id)
+    #print("max_i_id:", max_i_id)
+
+    return max_u_id, max_i_id, user_ratings
+def load_bprdata_2(traindata):
+    '''
+    As for bpr experiment, all ratings are removed.
+    '''
+    user_ratings = defaultdict(set)
+    max_u_id = -1
+    max_i_id = -1
+    for u in range(len(traindata)):
+        for i in range(len(traindata[u])):
+            if traindata[u][i] is not 0:
+                user_ratings[u].add(i)
+                max_u_id = max(u, max_u_id)
+                max_i_id = max(i, max_i_id)
+
+    print("max_u_id:", max_u_id+1)
+    print("max_i_id:", max_i_id+1)
+
+    return max_u_id+1, max_i_id+1, user_ratings
+
+
 
 
 
