@@ -12,7 +12,7 @@ np.random.seed(123456789)
 random.seed(123456789)
 
 batchSize = 32
-epochCount = 10 #epoch횟수 결정
+epochCount = 1 #epoch횟수 결정
 DIM = 15
 
 def initializeEvaluations(topN):
@@ -62,27 +62,92 @@ def printResultsToFile(topN, bestPrecision, bestRecall, bestNDCG, bestMRR, bestG
         f.write(resultLine)
         f.close()
 
-        
-# def trainBPR():
 
+def trainBPR(testData, trainData, trainMask, unratedItemsMask, numOfRatings, unrated_items, GroundTruth, itemCount, topN, m, h, reg, o, l,p, ran=False):
+    bestPrecision, bestRecall, bestNDCG, bestMRR, bestGlobalMRR, bestCost, bestEpochCount, bestMeanForMeasures, lastRecall, lastPrecision, lastNDCG, lastMRR, lastGlobalMRR = initializeEvaluations(
+        topN)
+    #userIdList_Train, allTrainData, allTestData, unratedTrainMask = dataprocess.prepareTrainAndTest(trainData, unratedItemsMask, testData)
+
+
+    user_count, item_count, user_ratings = dataprocess.load_bprdata_2(trainData)
+
+    with tf.Graph().as_default(), tf.Session() as sess:
+        u, i, j, mf_auc, bprloss, train_op, rating_mat = models.BPR(user_count, item_count, 20)
+        r = 0.01
+
+
+        user_ratings_test = generate_test(user_ratings)
+
+        sess.run(tf.global_variables_initializer())
+        for epoch in range(1, 11):
+            _batch_bprloss = 0
+            for k in range(1, 5000):  # uniform samples from training set
+                uij = generate_train_batch(user_ratings, user_ratings_test, item_count)
+                _bprloss, _ = sess.run([bprloss, train_op],
+                                          feed_dict={u: uij[:, 0], i: uij[:, 1], j: uij[:, 2]})
+                _batch_bprloss += _bprloss
+
+            print("epoch: ", epoch)
+            print("bpr_loss: ", _batch_bprloss / k)
+
+            user_count = 0
+            _auc_sum = 0.0
+
+            # each batch will return only one user's auc
+            for t_uij in generate_test_batch(user_ratings, user_ratings_test, item_count):
+                _auc, _test_bprloss = sess.run([mf_auc, bprloss],
+                                                  feed_dict={u: t_uij[:, 0], i: t_uij[:, 1], j: t_uij[:, 2]}
+                                                  )
+                user_count += 1
+                _auc_sum += _auc
+            print("test_loss: ", _test_bprloss, "test_auc: ", _auc_sum / user_count)
+            print("")
+
+            preidictedValues, predictedIndices = sess.run(tf.nn.top_k(rating_mat, itemCount),feed_dict={u: t_uij[:, 0], i: t_uij[:, 1], j: t_uij[:, 2]})
+            indice_test = []
+            #predictedIndices list(testData.keys())
+            for k in testData.keys():
+                indice_test.append(list(predictedIndices[k]))
+
+            #indice_test =
+            printTrigger, bestPrecision, bestRecall, bestNDCG, bestMRR, bestGlobalMRR, bestCost, bestEpochCount, bestMeanForMeasures, lastRecall, lastPrecision, lastNDCG, lastMRR, lastGlobalMRR = evaluation.evaluation_topN(
+                GroundTruth, indice_test, topN, bestPrecision, bestRecall, bestNDCG, bestMRR, bestGlobalMRR,
+                bestCost, bestEpochCount, bestMeanForMeasures, lastRecall, lastPrecision, lastNDCG, lastMRR,
+                lastGlobalMRR, epoch, _batch_bprloss)
+            if printTrigger == True:
+                print("%.4f   %.4f   %.4f   %.4f   %.4f" % (
+                bestPrecision[0], bestRecall[0], bestNDCG[0], bestMRR[0], bestGlobalMRR))
+            else:
+                print("[" + p + " / rankingparam:" + str(ran) + " Done...")
+
+    sess.close()
+    # precision recall ndcg mrr globalmrr cost epoch LAprecision LArecall LAndcg LAmrr LAglobalmrr be d m p s st de r h o l
+    be = "ML100k"
+    d = "d1"
+    s = False
+    st = False
+    de = False
+    ran = 0
+    a = 0
+    b = 0
+    printResultsToFile(topN, bestPrecision, bestRecall, bestNDCG, bestMRR, bestGlobalMRR, bestCost, bestEpochCount,
+                       bestMeanForMeasures, lastRecall, lastPrecision, lastNDCG, lastMRR, lastGlobalMRR, be, d, m, p, s,
+                       st, de, r, h, o, l)
 
 def trainSVD(testData, trainData, trainMask, unratedItemsMask, numOfRatings, unrated_items,
              GroundTruth, itemCount, topN, m, h, r, o, l, p, userCount, s = False):
     # prepare training
     bestPrecision, bestRecall, bestNDCG, bestMRR, bestGlobalMRR, bestCost, bestEpochCount, bestMeanForMeasures, \
     lastRecall, lastPrecision, lastNDCG, lastMRR, lastGlobalMRR = initializeEvaluations(topN)
-    userIdList_Train, allTrainData, allTestData, unratedTrainMask , test_ulist = dataprocess.prepareTrainAndTest(trainData,
+    userIdList_Train, allTrainData, allTestData, unratedTrainMask, test_ulist = dataprocess.prepareTrainAndTest(trainData,
                                                                                                     unratedItemsMask,
                                                                                                     testData)
     #print(userCount, itemCount)
 
     with tf.Graph().as_default():
 
-        user_batch = tf.placeholder(tf.int32, shape=[None], name="id_user")
-        item_batch = tf.placeholder(tf.int32, shape=[None], name="id_item")
-        rate_batch = tf.placeholder(tf.float32, shape=[None])
-        bias_user, infer, cost = models.SVD(user_batch, item_batch, rate_batch, user_num=userCount,
-                                              item_num=itemCount, r=r, dim=DIM)
+        user_batch, item_batch, rate_batch, infer, cost = models.SVD\
+            (user_num=userCount,item_num=itemCount, r=r, dim=DIM)
 
         if o == 1:
             optimizer = tf.train.GradientDescentOptimizer(l).minimize(cost)
@@ -110,12 +175,12 @@ def trainSVD(testData, trainData, trainMask, unratedItemsMask, numOfRatings, unr
                             batchItemId.append(j)
                             batchRate.append(trainData[userId][j])
 
-            c, _ = sess.run([cost, optimizer], feed_dict= {user_batch: batchUserId,
-                                                         item_batch: batchItemId,
-                                                         rate_batch: batchRate})
+                c, _ = sess.run([cost, optimizer], feed_dict= {user_batch: batchUserId,
+                                                            item_batch: batchItemId,
+                                                            rate_batch: batchRate})
 
+            print("[epoch %d/%d]\tcost : %.4f" % (epoch + 1, epochCount, c))
             predictBatchRate = []
-            #time.sleep(100)
             for u in test_ulist:
                 predictBatchUserId = []
                 predictBatchItemId = []
@@ -141,21 +206,134 @@ def trainSVD(testData, trainData, trainMask, unratedItemsMask, numOfRatings, unr
             else:
                 print("[" + p + " / sampling:" + str(s) + " Done...")
 
-        sess.close()
+    sess.close()
+    be = "ML100k"
+    d = "d1"
+    st = False
+    de = False
+    ran = 0
+    a = 0
+    b = 0
+    # be d m p s st de r h o l ran a b precision recall ndcg mrr globalmrr cost epoch LAprecision LArecall LAndcg LAmrr LAglobalmrr
+    printResultsToFile(topN, bestPrecision, bestRecall, bestNDCG, bestMRR, bestGlobalMRR, bestCost, bestEpochCount,
+                       bestMeanForMeasures, lastRecall, lastPrecision, lastNDCG, lastMRR, lastGlobalMRR, be, d, m,
+                       p, s, st, de, r, h, o, l, ran, a, b)
 
-        be = "ML100k"
-        d = "d1"
-        st = False
-        de = False
-        ran = 0
-        a = 0
-        b = 0
-        # be d m p s st de r h o l ran a b precision recall ndcg mrr globalmrr cost epoch LAprecision LArecall LAndcg LAmrr LAglobalmrr
-        printResultsToFile(topN, bestPrecision, bestRecall, bestNDCG, bestMRR, bestGlobalMRR, bestCost, bestEpochCount,
-                           bestMeanForMeasures, lastRecall, lastPrecision, lastNDCG, lastMRR, lastGlobalMRR, be, d, m,
-                           p, s, st, de, r, h, o, l, ran, a, b)
+def trainSVDpp(testData, trainData, trainMask, unratedItemsMask, numOfRatings, unrated_items,
+             GroundTruth, itemCount, topN, m, h, r, o, l, p, userCount, s = False):
+    bestPrecision, bestRecall, bestNDCG, bestMRR, bestGlobalMRR, bestCost, bestEpochCount, bestMeanForMeasures, \
+    lastRecall, lastPrecision, lastNDCG, lastMRR, lastGlobalMRR = initializeEvaluations(topN)
+    userIdList_Train, allTrainData, allTestData, unratedTrainMask, test_ulist = dataprocess.prepareTrainAndTest(
+        trainData,unratedItemsMask,testData)
+    # print(userCount, itemCount)
 
-# def trainSVDpp():
+    with tf.Graph().as_default():
+        user_batch, item_batch, rate_batch, rating_list_batch, userImplicit_batch,\
+        embd_y, infer, cost = models.SVDpp(user_num=userCount, item_num=itemCount, r=r,
+                                           dim=DIM)
+
+        if o == 1:
+            optimizer = tf.train.GradientDescentOptimizer(l).minimize(cost)
+        elif o == 2:
+            optimizer = tf.train.RMSPropOptimizer(l).minimize(cost)
+        else:
+            optimizer = tf.train.AdamOptimizer(l).minimize(cost)
+
+        sess = tf.InteractiveSession()
+        sess.run(tf.global_variables_initializer())
+
+        for epoch in range(epochCount):
+            random.shuffle(userIdList_Train)
+            for batchId in range(int(len(userIdList_Train) / batchSize)):
+                start = batchId * batchSize
+                end = start + batchSize
+                batchUserId = []
+                batchItemId = []
+                batchRate = []
+                rated_itemsIndex = []
+                numOfRatings_list = []
+                userImplicit_list = []
+                for i in range(start, end):
+                    userId = userIdList_Train[i]
+                    for j in range(itemCount):
+                        if (trainMask[userId][j] != 0):
+                            batchUserId.append(userId)
+                            batchItemId.append(j)
+                            batchRate.append(trainData[userId][j])
+                            rated_itemsIndex.append(np.nonzero(trainData[userId]))
+                            numOfRatings_list.append(numOfRatings[userId])
+
+                for j in range(len(batchUserId)):
+                    userImplicit = sess.run(embd_y, feed_dict={rating_list_batch:
+                                                              rated_itemsIndex[j]})
+                    userImplicit = np.reshape(userImplicit, (len(userImplicit[0]),
+                                                                 len(userImplicit[0][0])))
+                    userImplicit = np.sum(userImplicit, axis=0)
+                    for k in range(DIM):
+                        userImplicit[k] = (userImplicit[k]/math.sqrt(numOfRatings_list[j]))
+
+                    userImplicit_list.append(userImplicit)
+
+                c, _, predict = sess.run([cost, optimizer, infer], feed_dict={user_batch: batchUserId,
+                                                              item_batch: batchItemId,
+                                                              rate_batch: batchRate,
+                                                              userImplicit_batch: userImplicit_list})
+
+
+            print("[epoch %d/%d]\tcost : %.4f" % (epoch + 1, epochCount, c))
+
+            predictRate = []
+            for u in test_ulist:
+                predictNumOfRate = numOfRatings[u]
+                predictRateitemId = np.nonzero(testData[u])
+                predictBatchUserId = []
+                predictBatchItemId = []
+                predictBatchUserImplicit = []
+                for i in range(itemCount):
+                    predictBatchUserId.append(u)
+                    predictBatchItemId.append(i)
+
+                tmp = sess.run(embd_y, feed_dict={rating_list_batch: predictRateitemId})
+                tmp = np.reshape(tmp, (len(tmp[0]), len(tmp[0][0])))
+                tmp = np.sum(tmp, axis=0)
+                for k in range(DIM):
+                    tmp[k] = (tmp[k] / math.sqrt(predictNumOfRate))
+                for j in range(len(predictBatchUserId)):
+                        predictBatchUserImplicit.append(tmp)
+
+                rate = sess.run([infer], feed_dict={user_batch: predictBatchUserId,
+                                                    item_batch: predictBatchItemId,
+                                                    userImplicit_batch: predictBatchUserImplicit
+                                                    })
+                predictRate.append(list(rate[0]))
+
+            predictRate = np.asarray(predictRate)
+            predictedValues, predictedIndices = sess.run(tf.nn.top_k(predictRate * unratedTrainMask, itemCount))
+            printTrigger, bestPrecision, bestRecall, bestNDCG, bestMRR, bestGlobalMRR, bestCost, bestEpochCount, \
+            bestMeanForMeasures, lastRecall, lastPrecision, lastNDCG, lastMRR, lastGlobalMRR = \
+                evaluation.evaluation_topN(GroundTruth, predictedIndices, topN, bestPrecision, bestRecall, bestNDCG,
+                                           bestMRR, bestGlobalMRR, bestCost, bestEpochCount, bestMeanForMeasures,
+                                           lastRecall, lastPrecision, lastNDCG, lastMRR, lastGlobalMRR, epoch, c)
+
+            if printTrigger == True:
+                print("%.4f   %.4f   %.4f   %.4f   %.4f" % (
+                    bestPrecision[0], bestRecall[0], bestNDCG[0], bestMRR[0], bestGlobalMRR))
+            else:
+                print("[" + p + " / sampling:" + str(s) + " Done...")
+
+    sess.close()
+
+    be = "ML100k"
+    d = "d1"
+    st = False
+    de = False
+    ran = 0
+    a = 0
+    b = 0
+    # be d m p s st de r h o l ran a b precision recall ndcg mrr globalmrr cost epoch LAprecision LArecall LAndcg LAmrr LAglobalmrr
+    printResultsToFile(topN, bestPrecision, bestRecall, bestNDCG, bestMRR, bestGlobalMRR, bestCost, bestEpochCount,
+                       bestMeanForMeasures, lastRecall, lastPrecision, lastNDCG, lastMRR, lastGlobalMRR, be, d, m,
+                       p, s, st, de, r, h, o, l, ran, a, b)
 
 
 def trainAutorec(testData, trainData, trainMask, unratedItemsMask, numOfRatings, unrated_items, GroundTruth,
@@ -479,3 +657,46 @@ def trainDAS(testData, trainData, trainData_i, trainMask, trainMask_i, unratedIt
     st=False
     de=False
     printResultsToFile(topN, bestPrecision, bestRecall, bestNDCG, bestMRR, bestGlobalMRR, bestCost, bestEpochCount, bestMeanForMeasures, lastRecall, lastPrecision, lastNDCG, lastMRR, lastGlobalMRR, be, d, m, p, s, st, de, r, h, o, l, ran, a, b)
+
+
+def generate_test(user_ratings):
+    '''
+    for each user, random select one of his(her) rating into test set
+    '''
+    user_test = dict()
+    for u, i_list in user_ratings.items():
+        user_test[u] = random.sample(user_ratings[u], 1)[0]
+    return user_test
+
+
+
+def generate_train_batch(user_ratings, user_ratings_test, item_count, batch_size=256):
+    '''
+    uniform sampling (user, item_rated, item_not_rated)
+    '''
+    t = []
+    for b in range(batch_size):
+        u = random.sample(user_ratings.keys(), 1)[0]
+        i = random.sample(user_ratings[u], 1)[0]
+        while i == user_ratings_test[u]:
+            i = random.sample(user_ratings[u], 1)[0]
+
+        j = random.randint(1, item_count)
+        while j in user_ratings[u]:
+            j = random.randint(1, item_count)
+        t.append([u, i, j])
+    return numpy.asarray(t)
+
+def generate_test_batch(user_ratings, user_ratings_test, item_count):
+    '''
+    for an user u and an item i rated by u,
+    generate pairs (u,i,j) for all item j which u has't rated
+    it's convinent for computing AUC score for u
+    '''
+    for u in user_ratings.keys():
+        t = []
+        i = user_ratings_test[u]
+        for j in range(1, item_count + 1):
+            if not (j in user_ratings[u]):
+                t.append([u, i, j])
+        yield numpy.asarray(t)
