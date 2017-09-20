@@ -12,11 +12,9 @@ import trainer
 
 benchmark = ["ML100k"]                                  #be
 dataType = ["d1","d2","d3","d4","d5"]                   #d
-#model = ["autorec", "apr", "dualTanh", "dualSigmoid", "bpr", "svdpp"]   #m
+model = ["autorec", "apr", "dualTanh", "dualSigmoid", "bpr"]   #m
 #model = ["autorec"] #"svd", "bpr", "svdpp"
-model = []
-SVD_model = ["svd"]
-#SVD_model = ["svd", "svdpp"]
+SVD_model = ["svd", "svdpp"]
 
 problem = ["explicit", "implicit"]                      #p
 sampleFlag = [True, False]                              #s
@@ -27,7 +25,7 @@ topN = [5, 10, 15, 20]
 regularization = [0.1, 0.05, 0.01]                      #r  
 hiddenLayer = [20, 40, 60, 80, 100, 120]                #h
 optimizerType = [1, 2, 3] #1은 GD 2는 RMSprop, 3은 adam #o
-learningRate = [0.1, 0.01, 0.001]                       #l
+learningRate = [0.1, 0.01, 0.001]    #l
 rankingparam = [1, 1.25, 1.5, 1.75, 2]                  #ran
 alpha = [1, 10, 20, 30, 40, 50]                            #a
 beta = [0, 0.5, 0.4, 0.3, 0.6, 0.7]                        #b
@@ -66,14 +64,18 @@ def learning (testData, testData_i, trainData, trainData_i, trainMask, trainMask
                                      positiveMask, numOfRatings, unrated_items, GroundTruth, itemCount, topN,
                                      m, h, reg, o, l, ran, a, b)
     
-    # elif m == "bpr"
-    
+    elif m == "bpr":
+        p = "implicit"
+        trainer.trainBPR(testData, trainData, trainMask, unratedItemsMask, numOfRatings, unrated_items, GroundTruth,
+                         itemCount, topN, m, h, reg, o, l, p)
+
+
     elif m == "svd":
         s = False
         p = "None"
         trainer.trainSVD(testData, trainData, trainMask, unratedItemsMask, numOfRatings, unrated_items, GroundTruth,
                          itemCount, topN, m, h, reg, o, l, p, userCount, s)
-    elif m == "svdPP":
+    elif m == "svdpp":
         s = False
         p = "None"
         trainer.trainSVDpp(testData, trainData, trainMask, unratedItemsMask, numOfRatings, unrated_items, GroundTruth,
@@ -89,6 +91,7 @@ for d in dataType:
     print(userCount, itemCount)
     testData, testData_i, trainData, trainData_i, trainMask, trainMask_i, unratedItemsMask, positiveMask, negativeMask, numOfRatings, unrated_items, GroundTruth, GroundTruth_i = dataprocess.processData(itemCount, trainSet, testSet)
     # start training
+
     for m in model:
         TOTAL = len(regularization)*len(hiddenLayer)*len(optimizerType)*len(learningRate)
         COUNT = 1        
@@ -118,11 +121,12 @@ for d in dataType:
         TOTAL = len(regularization) * len(optimizerType) * len(learningRate)
         COUNT = 1
         for n in topN:
-            outputFile = "svd" + "_top" + str(n) + ".txt"
+            outputFile = m + "_top" + str(n) + ".txt"
             f = open(outputFile, 'a')
             f.write(
                 "be d m p s st de r h o l ran a b precision recall ndcg mrr globalmrr cost epoch LAprecision LArecall LAndcg LAmrr LAglobalmrr\n")
             f.close()
+        #time.sleep(10)
         for reg in regularization:
             for o in optimizerType:
                 for l in learningRate:
