@@ -13,3 +13,4 @@ model.py - model implementation
 
 trainer.py - train each model
 
+projectAPR.docx - paper about APR
