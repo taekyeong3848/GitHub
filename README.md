@@ -14,3 +14,5 @@ model.py - model implementation
 trainer.py - train each model
 
 projectAPR.docx - paper about APR
+
+포트폴리오.pdf - portfolio
