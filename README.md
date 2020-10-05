@@ -15,4 +15,4 @@ trainer.py - train each model
 
 projectAPR.docx - paper about APR
 
-포트폴리오.pdf - portfolio
+포트폴리오_최태경.pdf - portfolio
